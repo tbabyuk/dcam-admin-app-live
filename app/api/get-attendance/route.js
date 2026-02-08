@@ -5,14 +5,38 @@ import { supabase } from "@/database/supabase-config";
 
 export const POST = async (req) => {
 
-    const {user} = await req.json()
+    const { user, payday: requestedPayday } = await req.json()
 
     console.log("Logging user from API:", user)
     
     try {
+        // Fetch distinct paydays (ordered desc) for dropdown
+        const { data: paydayRows, error: paydayError } = await supabase
+            .from('portal_attendance')
+            .select('payday')
+            .not('payday', 'is', null)
+            .order('payday', { ascending: false })
+
+        if (paydayError) {
+            console.log("Supabase payday error:", paydayError)
+            return NextResponse.json({ error: paydayError.message }, { status: 500 })
+        }
+
+        const paydays = [...new Set((paydayRows || []).map(r => r.payday).filter(Boolean))]
+        const mostRecentPayday = paydays[0] ?? null
+
+        const selectedPayday = requestedPayday && paydays.includes(requestedPayday)
+            ? requestedPayday
+            : mostRecentPayday
+
+        if (!selectedPayday) {
+            return NextResponse.json({ metaArray: [], paydays: [], currentPayday: null })
+        }
+
         let query = supabase
             .from('portal_attendance')
-            .select('teacher_name, teacher_id, week_1_status, week_2_status, payday, week_1_notes, week_2_notes, student_name')
+            .select('teacher_name, teacher_id, week_1_status, week_2_status, payday, week_1_notes, week_2_notes, student_name, week_1_pay, week_2_pay')
+            .eq('payday', selectedPayday)
 
         // For demo user, only fetch demo teachers
         if (user === "Demo") {
@@ -42,7 +66,9 @@ export const POST = async (req) => {
                     payday: record.payday,
                     students: [],
                     week1Notes: null,
-                    week2Notes: null
+                    week2Notes: null,
+                    week1Pay: 0,
+                    week2Pay: 0
                 })
             }
 
@@ -54,6 +80,10 @@ export const POST = async (req) => {
                 week1Status: record.week_1_status,
                 week2Status: record.week_2_status
             })
+
+            // Sum pay per teacher (each record is one enrollment)
+            teacherData.week1Pay += Number(record.week_1_pay) || 0
+            teacherData.week2Pay += Number(record.week_2_pay) || 0
 
             // Capture notes (they should be the same for all students of a teacher, but just in case take the first non-null)
             if (!teacherData.week1Notes && record.week_1_notes) {
@@ -74,9 +104,9 @@ export const POST = async (req) => {
             const week1Submitted = teacherData.students.length > 0 && 
                 teacherData.students.every(s => s.week1Status && s.week1Status !== 'unrecorded')
 
-            // Note: totalPay is not available in portal_attendance table
-            // If pay calculation is needed, it would require joining with another table
-            // that contains pay rates per student/enrollment
+            const week1Pay = teacherData.week1Pay
+            const week2Pay = teacherData.week2Pay
+            const totalPay = week1Pay + week2Pay
 
             return {
                 teacher: teacherData.teacher,
@@ -85,14 +115,16 @@ export const POST = async (req) => {
                 payday: teacherData.payday,
                 week1Notes: teacherData.week1Notes,
                 week2Notes: teacherData.week2Notes,
-                totalPay: null // Not available in portal_attendance - may need additional data source
+                week1Pay,
+                week2Pay,
+                totalPay
             }
         })
 
         // Sort by teacher name for consistent ordering
         metaArray.sort((a, b) => a.teacher.localeCompare(b.teacher))
 
-        return NextResponse.json({metaArray})
+        return NextResponse.json({ metaArray, paydays, currentPayday: selectedPayday })
 
     } catch (error) {
         console.log("Error getting data from db:", error)
