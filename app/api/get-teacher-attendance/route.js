@@ -10,7 +10,7 @@ export const POST = async (req) => {
     try {
         const { data, error } = await supabase
             .from('portal_attendance')
-            .select('student_name, week_1_status, week_2_status')
+            .select('student_name, week_1_status, week_2_status, week_1_pay, week_2_pay')
             .eq('teacher_name', currentTeacher)
 
         if (error) {
@@ -19,16 +19,14 @@ export const POST = async (req) => {
         }
 
         // Transform to the format expected by AttendanceModal
-        // Original format: { name, attendance: { week1, week2 }, pay }
         const teacherAttendanceArray = data.map(record => ({
             name: record.student_name,
             attendance: {
                 week1: record.week_1_status,
                 week2: record.week_2_status
             },
-            // Note: pay is not available in portal_attendance table
-            // If pay is needed, it would require joining with enrollments or another table
-            pay: 0
+            week1Pay: Number(record.week_1_pay) ?? 0,
+            week2Pay: Number(record.week_2_pay) ?? 0
         }))
 
         return NextResponse.json({teacherAttendanceArray})
