@@ -1,0 +1,101 @@
+import { NextResponse } from "next/server";
+import { supabase } from "@/database/supabase-config";
+
+
+
+export const POST = async (req) => {
+
+    const {user} = await req.json()
+
+    console.log("Logging user from API:", user)
+    
+    try {
+        let query = supabase
+            .from('portal_attendance')
+            .select('teacher_name, teacher_id, week_1_status, week_2_status, payday, week_1_notes, week_2_notes, student_name')
+
+        // For demo user, only fetch demo teachers
+        if (user === "Demo") {
+            console.log("If block fired++++++++++++++++++++=")
+            query = query.in('teacher_name', ['demo1', 'demo2', 'demo3'])
+        } else {
+            // Exclude demo teachers for regular users
+            query = query.not('teacher_name', 'in', '(demo1,demo2,demo3,demo4,demo5)')
+        }
+
+        const { data, error } = await query
+
+        if (error) {
+            console.log("Supabase error:", error)
+            return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+
+        // Aggregate data by teacher
+        const teacherMap = new Map()
+
+        data.forEach(record => {
+            const teacherName = record.teacher_name
+
+            if (!teacherMap.has(teacherName)) {
+                teacherMap.set(teacherName, {
+                    teacher: teacherName,
+                    payday: record.payday,
+                    students: [],
+                    week1Notes: null,
+                    week2Notes: null
+                })
+            }
+
+            const teacherData = teacherMap.get(teacherName)
+            
+            // Add student record
+            teacherData.students.push({
+                name: record.student_name,
+                week1Status: record.week_1_status,
+                week2Status: record.week_2_status
+            })
+
+            // Capture notes (they should be the same for all students of a teacher, but just in case take the first non-null)
+            if (!teacherData.week1Notes && record.week_1_notes) {
+                teacherData.week1Notes = record.week_1_notes
+            }
+            if (!teacherData.week2Notes && record.week_2_notes) {
+                teacherData.week2Notes = record.week_2_notes
+            }
+        })
+
+        // Transform to metaArray format expected by frontend
+        const metaArray = Array.from(teacherMap.values()).map(teacherData => {
+            // Check if all students have submitted for week 2 (status is not 'unrecorded')
+            const week2Submitted = teacherData.students.length > 0 && 
+                teacherData.students.every(s => s.week2Status && s.week2Status !== 'unrecorded')
+            
+            // Check if all students have submitted for week 1
+            const week1Submitted = teacherData.students.length > 0 && 
+                teacherData.students.every(s => s.week1Status && s.week1Status !== 'unrecorded')
+
+            // Note: totalPay is not available in portal_attendance table
+            // If pay calculation is needed, it would require joining with another table
+            // that contains pay rates per student/enrollment
+
+            return {
+                teacher: teacherData.teacher,
+                week1Submitted,
+                week2Submitted,
+                payday: teacherData.payday,
+                week1Notes: teacherData.week1Notes,
+                week2Notes: teacherData.week2Notes,
+                totalPay: null // Not available in portal_attendance - may need additional data source
+            }
+        })
+
+        // Sort by teacher name for consistent ordering
+        metaArray.sort((a, b) => a.teacher.localeCompare(b.teacher))
+
+        return NextResponse.json({metaArray})
+
+    } catch (error) {
+        console.log("Error getting data from db:", error)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+}

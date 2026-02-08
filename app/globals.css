@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+.dcam-container {
+  @apply h-full w-full px-5 md:px-14 xl:px-32 py-16 overflow-y-auto;
+}
+
+ .dashboard-menu-item {
+  @apply h-[40px] grid items-center ps-12 text-[.85rem] text-gray-100 hover:bg-primary;
+}
+
+.table-btn {
+  @apply btn btn-sm bg-gray-300 font-normal;
+}
+
+.weekly-todos-day {
+  @apply flex-1 bg-gray-200 min-w-[120px] text-sm;
+}
+
