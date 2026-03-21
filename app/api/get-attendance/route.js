@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/database/supabase-config";
 
+/** Only present/counted rows earn pay (matches AttendanceModal display logic). */
+const statusEarnsPay = (status) => status === "present" || status === "counted";
+
 
 
 export const POST = async (req) => {
@@ -81,9 +84,13 @@ export const POST = async (req) => {
                 week2Status: record.week_2_status
             })
 
-            // Sum pay per teacher (each record is one enrollment)
-            teacherData.week1Pay += Number(record.week_1_pay) || 0
-            teacherData.week2Pay += Number(record.week_2_pay) || 0
+            // Sum pay only when that week earned pay (same rule as AttendanceModal)
+            if (statusEarnsPay(record.week_1_status)) {
+                teacherData.week1Pay += Number(record.week_1_pay) || 0
+            }
+            if (statusEarnsPay(record.week_2_status)) {
+                teacherData.week2Pay += Number(record.week_2_pay) || 0
+            }
 
             // Capture notes (they should be the same for all students of a teacher, but just in case take the first non-null)
             if (!teacherData.week1Notes && record.week_1_notes) {
